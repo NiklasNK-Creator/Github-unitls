@@ -39,6 +39,25 @@ dist\gu.exe --path "C:\path\to\project" repo get
 dist\gu.exe --path "C:\path\to\project" sync
 ```
 
+DB Commands
+
+Examples for managing DBs (works both with `python cli.py` and the `gu.exe` binary when using `--path`):
+
+```powershell
+# list known DBs
+gu db list
+# create a DB named "users"
+gu db create users
+# update an entry in the users DB (key=value)
+gu db update users email=demo@example.com
+# get the merged view of the users DB
+gu db get users
+# delete a DB and its buckets
+gu db delete users
+```
+
+The `dbs.json` file is updated automatically when you create or delete DBs; read operations merge all bucket files like `users-0.json`, `users-1.json`, ... into a single JSON object for convenience.
+
 Sync behavior (what the exe does)
 - Adds/removes the `origin` remote to use an authenticated HTTPS URL that embeds the PAT.
 - Runs `git fetch origin` and then `git pull --rebase origin <branch>` before `git push` to avoid rejected pushes.
