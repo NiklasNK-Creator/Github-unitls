@@ -32,8 +32,18 @@ def main() -> None:
         project_path = args[1]
         args = args[2:]
 
-    base_dir = resolve_base_dir(Path(project_path) if project_path else None)
-    env = load_env(base_dir / ".env")
+    # Determine executable directory and prefer `gu.env` next to the executable
+    exe_dir = Path(sys.argv[0]).resolve().parent
+    env_file = exe_dir / "gu.env"
+
+    # If a project path was explicitly provided, use it directly (don't search upward).
+    if project_path:
+        base_dir = Path(project_path).resolve()
+    else:
+        base_dir = resolve_base_dir(None)
+
+    # Use the gu.env located next to the executable to avoid conflicts
+    env = load_env(env_file)
     config = read_config(base_dir / "dbs.json")
 
     if not args or args[0] in {"-h", "--help", "help"}:
@@ -55,13 +65,13 @@ def main() -> None:
     if command == "token":
         if len(args) >= 3 and args[1].lower() == "set":
             env["GITHUB_TOKEN"] = args[2]
-            save_env(base_dir / ".env", env)
+            save_env(env_file, env)
             print("token set")
         elif len(args) == 2 and args[1].lower() == "get":
             print(env.get("GITHUB_TOKEN", ""))
         elif len(args) == 2:
             env["GITHUB_TOKEN"] = args[1]
-            save_env(base_dir / ".env", env)
+            save_env(env_file, env)
             print("token set")
         else:
             print(env.get("GITHUB_TOKEN", ""))
@@ -70,13 +80,13 @@ def main() -> None:
     if command == "name":
         if len(args) >= 3 and args[1].lower() == "set":
             env["GITHUB_USERNAME"] = args[2]
-            save_env(base_dir / ".env", env)
+            save_env(env_file, env)
             print("name set")
         elif len(args) == 2 and args[1].lower() == "get":
             print(env.get("GITHUB_USERNAME", ""))
         elif len(args) == 2:
             env["GITHUB_USERNAME"] = args[1]
-            save_env(base_dir / ".env", env)
+            save_env(env_file, env)
             print("name set")
         else:
             print(env.get("GITHUB_USERNAME", ""))
@@ -85,13 +95,13 @@ def main() -> None:
     if command == "repo":
         if len(args) >= 3 and args[1].lower() == "set":
             env["GITHUB_REPOSITORY"] = args[2]
-            save_env(base_dir / ".env", env)
+            save_env(env_file, env)
             print("repo set")
         elif len(args) == 2 and args[1].lower() == "get":
             print(env.get("GITHUB_REPOSITORY", ""))
         elif len(args) == 2:
             env["GITHUB_REPOSITORY"] = args[1]
-            save_env(base_dir / ".env", env)
+            save_env(env_file, env)
             print("repo set")
         else:
             print(env.get("GITHUB_REPOSITORY", ""))
