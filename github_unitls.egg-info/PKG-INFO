@@ -1,0 +1,36 @@
+Metadata-Version: 2.4
+Name: github-unitls
+Version: 0.1.0
+Summary: Reusable storage and GitHub sync helper with a terminal CLI
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# GU Package
+
+This package is a tiny reusable storage helper for:
+- a .env file with GitHub token, username, and repo name
+- a dbs.json file for database names
+- a batch wrapper for syncing from any project
+
+## Quick usage
+
+From the project folder:
+
+```bat
+sync.bat token set YOUR_TOKEN
+sync.bat name set YOUR_NAME
+sync.bat repo set YOUR_REPO
+sync.bat db create users
+sync.bat db update users email=demo@example.com
+sync.bat db get users
+sync.bat sync
+```
+
+## Behavior
+
+- The package checks the configured repo name first.
+- If the repo directory is full, it creates the next repo bucket like repo-name-1, repo-name-2, and so on.
+- Each DB is split into JSON chunks.
+- A chunk is reused while it still fits under the configured size limit.
+- When a chunk would exceed the limit, a new chunk is created.
+- Reading a DB merges all matching chunks into one view.
