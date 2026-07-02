@@ -154,6 +154,14 @@ class StorageManager:
         repo_path = self.base_dir.resolve()
         git_dir = repo_path / ".git"
 
+        # prepare non-interactive git environment to avoid GCM/browser prompts
+        git_env = os.environ.copy()
+        git_env.setdefault("GIT_TERMINAL_PROMPT", "0")
+        git_env.setdefault("GCM_INTERACTIVE", "never")
+
+        def _run(cmd: List[str], check: bool = True) -> subprocess.CompletedProcess:
+            return subprocess.run(cmd, cwd=repo_path, check=check, capture_output=True, text=True, env=git_env)
+
         commands = []
         if not git_dir.exists():
             commands.append(["git", "init"])
@@ -165,18 +173,18 @@ class StorageManager:
             ]
         )
 
-        if subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True).returncode == 0:
-            remote_output = subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True).stdout
-            if "origin" in remote_output.splitlines():
+        try:
+            remote_list = _run(["git", "remote"], check=False).stdout
+            if "origin" in remote_list.splitlines():
                 commands.append(["git", "remote", "remove", "origin"])
+        except Exception:
+            # ignore remote listing errors
+            pass
 
         commands.extend(
             [
                 ["git", "remote", "add", "origin", auth_repo_url],
                 ["git", "add", ".env", "dbs.json", "cli.py", "README.md", "pyproject.toml", "sync.bat", "gu_package", "tests"],
-                ["git", "commit", "-m", "Auto-sync update"],
-                ["git", "branch", "-M", branch],
-                ["git", "push", "-u", "origin", branch],
             ]
         )
 
@@ -189,12 +197,45 @@ class StorageManager:
         }
 
         try:
+            # run prepared commands (init, config, remote add, add)
             for command in commands:
-                subprocess.run(command, cwd=repo_path, check=True, capture_output=True, text=True)
+                proc = _run(command)
                 result["commands"].append(" ".join(command))
+
+            # commit (may be nothing to commit)
+            try:
+                proc = _run(["git", "commit", "-m", "Auto-sync update"]) 
+                result["commands"].append("git commit -m Auto-sync update")
+            except subprocess.CalledProcessError as exc:
+                stderr = exc.stderr or ""
+                if "nothing to commit" in stderr.lower() or "no changes added to commit" in stderr.lower():
+                    # nothing to commit; continue
+                    result["commands"].append("git commit (no changes)")
+                else:
+                    raise
+
+            # ensure branch name
+            _run(["git", "branch", "-M", branch])
+            result["commands"].append(f"git branch -M {branch}")
+
+            # fetch and rebase/pull remote changes to avoid push rejection
+            _run(["git", "fetch", "origin"], check=False)
+            result["commands"].append("git fetch origin")
+
+            pull_proc = _run(["git", "pull", "--rebase", "origin", branch], check=False)
+            result["commands"].append(f"git pull --rebase origin {branch}")
+            if pull_proc.returncode != 0:
+                pull_err = (pull_proc.stderr or pull_proc.stdout or "").strip()
+                if "CONFLICT" in pull_err or "conflict" in pull_err:
+                    raise subprocess.CalledProcessError(pull_proc.returncode, ["git", "pull"], output=pull_proc.stdout, stderr=pull_proc.stderr)
+
+            # final push
+            _run(["git", "push", "-u", "origin", branch])
+            result["commands"].append(f"git push -u origin {branch}")
+
         except subprocess.CalledProcessError as exc:
             result["status"] = "error"
-            error_text = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+            error_text = (exc.stderr or exc.stdout or str(exc)).strip()
             result["error"] = error_text
             if "Authentication failed" in error_text or "Repository not found" in error_text or "could not read Username" in error_text:
                 result["login_help"] = (
