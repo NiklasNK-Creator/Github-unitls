@@ -15,7 +15,16 @@ class StorageManager:
         chunk_limit_bytes: int = 100 * 1024 * 1024,
         repo_limit_bytes: int = 1024 * 1024 * 1024,
     ) -> None:
-        self.base_dir = Path(base_dir or Path.cwd())
+        start_path = Path(base_dir or Path.cwd()).resolve()
+        current = start_path
+        while True:
+            if (current / ".env").exists() or (current / "dbs.json").exists() or (current / ".git").exists():
+                self.base_dir = current
+                break
+            if current.parent == current:
+                self.base_dir = start_path
+                break
+            current = current.parent
         self.repo_name = repo_name or os.getenv("GITHUB_REPOSITORY", "default-repo")
         self.chunk_limit_bytes = chunk_limit_bytes
         self.repo_limit_bytes = repo_limit_bytes
@@ -140,8 +149,9 @@ class StorageManager:
         return self._dir_size(self._resolve_repo_dir())
 
     def sync_repo(self, github_token: str, github_username: str, github_repository: str, branch: str = "main") -> Dict[str, Any]:
-        repo_url = f"https://{github_token}@github.com/{github_username}/{github_repository}.git"
-        repo_path = self.base_dir
+        repo_url = f"https://github.com/{github_username}/{github_repository}.git"
+        auth_repo_url = f"https://{github_token}@github.com/{github_username}/{github_repository}.git"
+        repo_path = self.base_dir.resolve()
         git_dir = repo_path / ".git"
 
         commands = []
@@ -151,10 +161,21 @@ class StorageManager:
             [
                 ["git", "config", "user.name", github_username],
                 ["git", "config", "user.email", f"{github_username}@users.noreply.github.com"],
-                ["git", "add", "-A"],
+                ["git", "config", "credential.helper", "store"],
+            ]
+        )
+
+        if subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True).returncode == 0:
+            remote_output = subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True).stdout
+            if "origin" in remote_output.splitlines():
+                commands.append(["git", "remote", "remove", "origin"])
+
+        commands.extend(
+            [
+                ["git", "remote", "add", "origin", auth_repo_url],
+                ["git", "add", ".env", "dbs.json", "cli.py", "README.md", "pyproject.toml", "sync.bat", "gu_package", "tests"],
                 ["git", "commit", "-m", "Auto-sync update"],
                 ["git", "branch", "-M", branch],
-                ["git", "remote", "add", "origin", repo_url],
                 ["git", "push", "-u", "origin", branch],
             ]
         )
@@ -173,7 +194,13 @@ class StorageManager:
                 result["commands"].append(" ".join(command))
         except subprocess.CalledProcessError as exc:
             result["status"] = "error"
-            result["error"] = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+            error_text = exc.stderr.strip() or exc.stdout.strip() or str(exc)
+            result["error"] = error_text
+            if "Authentication failed" in error_text or "Repository not found" in error_text or "could not read Username" in error_text:
+                result["login_help"] = (
+                    "Use a GitHub PAT in GITHUB_TOKEN and make sure the repo exists. "
+                    "If you still get prompted, run: git config --global credential.helper store"
+                )
             return result
 
         return result

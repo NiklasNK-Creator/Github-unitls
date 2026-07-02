@@ -9,14 +9,35 @@ def print_json(data):
     print(json.dumps(data, indent=2))
 
 
+def resolve_base_dir(start: Path | None = None) -> Path:
+    start_path = (start or Path.cwd()).resolve()
+    current = start_path
+    while True:
+        if (current / ".env").exists() or (current / "dbs.json").exists() or (current / ".git").exists():
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+    return start_path
+
+
 def main() -> None:
-    base_dir = Path.cwd()
+    args = sys.argv[1:]
+    project_path = None
+
+    if args and args[0].startswith("--path="):
+        project_path = args[0].split("=", 1)[1]
+        args = args[1:]
+    elif args and args[0] == "--path" and len(args) >= 2:
+        project_path = args[1]
+        args = args[2:]
+
+    base_dir = resolve_base_dir(Path(project_path) if project_path else None)
     env = load_env(base_dir / ".env")
     config = read_config(base_dir / "dbs.json")
-    args = sys.argv[1:]
 
     if not args or args[0] in {"-h", "--help", "help"}:
-        print("usage: gu <token|name|repo|sync|db|dbs|config> [arguments]")
+        print("usage: gu [--path <project-path>] <token|name|repo|sync|db|dbs|config> [arguments]")
         print("")
         print("Examples:")
         print("  gu token set MY_TOKEN")
@@ -26,6 +47,7 @@ def main() -> None:
         print("  gu db update users email=test@example.com")
         print("  gu db get users")
         print("  gu sync")
+        print("  gu --path E:/some/project sync")
         return
 
     command = args[0].lower()
